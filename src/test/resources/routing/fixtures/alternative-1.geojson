@@ -1,0 +1,11 @@
+{
+  "type": "FeatureCollection",
+  "features": [{
+    "type": "Feature",
+    "properties": {"name": "90-Grad-Kurve, erwarteter Gewinner"},
+    "geometry": {
+      "type": "LineString",
+      "coordinates": [[0, 0], [1, 0], [1, 1]]
+    }
+  }]
+}

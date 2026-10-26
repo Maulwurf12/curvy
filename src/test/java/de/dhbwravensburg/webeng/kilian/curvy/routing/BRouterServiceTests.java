@@ -6,8 +6,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -17,27 +22,64 @@ import static org.springframework.http.HttpMethod.GET;
 class BRouterServiceTests {
 
     @Test
-    void calculatesGeoJsonRouteWithFixedProfile() {
-        RestClient.Builder builder = RestClient.builder().baseUrl("https://brouter.example");
-        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
-        server.expect(requestTo(
-                        "https://brouter.example/brouter?lonlats=9.173,47.678%7C10.7,47.566"
-                                        + "&profile=car-fast&alternativeidx=0&format=geojson"
-                ))
-                .andExpect(method(GET))
-                .andExpect(queryParam("lonlats", "9.173,47.678%7C10.7,47.566"))
-                .andExpect(queryParam("profile", "car-fast"))
-                .andExpect(queryParam("alternativeidx", "0"))
-                .andExpect(queryParam("format", "geojson"))
-                .andRespond(withSuccess("{\"type\":\"FeatureCollection\",\"features\":[]}", MediaType.APPLICATION_JSON));
+    void calculatesGeoJsonRouteWithFixedProfileAndRequestedAlternative() {
+        for (int alternativeIdx = 0; alternativeIdx < 3; alternativeIdx++) {
+            RestClient.Builder builder = RestClient.builder().baseUrl("https://brouter.example");
+            MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+            server.expect(requestTo(
+                            "https://brouter.example/brouter?lonlats=9.173,47.678%7C10.7,47.566"
+                                    + "&profile=car-fast&alternativeidx=" + alternativeIdx + "&format=geojson"
+                    ))
+                    .andExpect(method(GET))
+                    .andExpect(queryParam("lonlats", "9.173,47.678%7C10.7,47.566"))
+                    .andExpect(queryParam("profile", "car-fast"))
+                    .andExpect(queryParam("alternativeidx", Integer.toString(alternativeIdx)))
+                    .andExpect(queryParam("format", "geojson"))
+                    .andRespond(withSuccess("{\"type\":\"FeatureCollection\",\"features\":[]}", MediaType.APPLICATION_JSON));
 
-        BRouterService service = new BRouterService(builder.build());
-        String geoJson = service.calculateRoute(new RouteRequest(
-                new Coordinate(47.678, 9.173),
-                new Coordinate(47.566, 10.7)
-        ));
+            BRouterService service = new BRouterService(builder.build());
+            String geoJson = service.calculateRoute(new RouteRequest(
+                    new Coordinate(47.678, 9.173),
+                    new Coordinate(47.566, 10.7)
+            ), alternativeIdx);
 
-        assertEquals("{\"type\":\"FeatureCollection\",\"features\":[]}", geoJson);
-        server.verify();
+            assertEquals("{\"type\":\"FeatureCollection\",\"features\":[]}", geoJson);
+            server.verify();
+        }
+    }
+
+    @Test
+    void rejectsNegativeAlternativeIndices() {
+        BRouterService service = new BRouterService(RestClient.create());
+        assertThrows(IllegalArgumentException.class, () -> service.calculateRoute(new RouteRequest(
+                new Coordinate(0.0, 0.0), new Coordinate(0.0, 2.0)), -1));
+    }
+
+    @Test
+    void extractsLongitudeLatitudeAndIgnoresElevation() {
+        BRouterService service = new BRouterService(RestClient.create());
+        assertEquals(List.of(new Coordinate(47.0, 9.0), new Coordinate(48.0, 10.0)),
+                service.extractCoordinates(route("[[9,47,400],[10,48,420]]")));
+    }
+
+    @Test
+    void rejectsEmptyMalformedAndInvalidUpstreamRoutes() {
+        BRouterService service = new BRouterService(RestClient.create());
+        for (String geoJson : Arrays.asList(null, "", " ", "not json", "null", "[]", "{}",
+                "{\"features\":[]}",
+                "{\"features\":[{\"geometry\":{\"type\":{},\"coordinates\":[]}}]}",
+                route("[]"), route("[[9,47]]"), route("[[9,47],[]]"),
+                route("[[9,47],[10,null]]"), route("[[9,47],[\"10\",48]]"),
+                route("[[9,47],[10,91]]"), route("[[9,47],[181,48]]"),
+                route("[[9,47],[10,1e400]]"),
+                route("[[9,47],[10,48]]").replace("LineString", "MultiLineString"))) {
+            assertThrows(RestClientException.class, () -> service.extractCoordinates(geoJson),
+                    "Ungültige Antwort muss als BRouter-Fehler behandelt werden: " + geoJson);
+        }
+    }
+
+    private String route(String coordinates) {
+        return "{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\","
+                + "\"geometry\":{\"type\":\"LineString\",\"coordinates\":" + coordinates + "}}]}";
     }
 }

@@ -1,5 +1,7 @@
-### Route berechnen (Standardprofil aus application.yaml)
-POST http://localhost:8081/api/routes
+@baseUrl = http://localhost:8081
+
+### Echte Route: Alternativen vergleichen und Antwort prüfen (BRouter muss erreichbar sein)
+POST {{baseUrl}}/api/routes
 Content-Type: application/json
 Accept: application/json
 
@@ -14,25 +16,40 @@ Accept: application/json
   }
 }
 
-### Route mit explizitem BRouter-Profil berechnen
-POST http://localhost:8081/api/routes
-Content-Type: application/json
-Accept: application/json
+> {%
+    client.test("Route erfolgreich berechnet", function () {
+        client.assert(response.status === 200, "Erwartet HTTP 200, erhalten: " + response.status);
+    });
 
-{
-  "start": {
-    "latitude": 47.678,
-    "longitude": 9.173
-  },
-  "destination": {
-    "latitude": 47.566,
-    "longitude": 10.700
-  },
-  "profile": "car-fast"
-}
+    client.test("Koordinaten und Alternativindex sind gültig", function () {
+        const body = response.body;
+        client.assert(Array.isArray(body.coordinates) && body.coordinates.length >= 2,
+            "Mindestens zwei Koordinaten erwartet");
+        client.assert([0, 1, 2].includes(body.alternativeIdx), "Ungültiger Alternativindex");
+        for (const point of body.coordinates) {
+            client.assert(Number.isFinite(point.latitude) && Math.abs(point.latitude) <= 90,
+                "Ungültiger Breitengrad");
+            client.assert(Number.isFinite(point.longitude) && Math.abs(point.longitude) <= 180,
+                "Ungültiger Längengrad");
+        }
+    });
+
+    client.test("Score entspricht Winkelsumme geteilt durch Kilometer", function () {
+        const result = response.body.curviness;
+        client.assert(Number.isFinite(result.distanceKm) && result.distanceKm > 0,
+            "Positive, endliche Streckenlänge erwartet");
+        client.assert(Number.isFinite(result.totalTurnAngleDegrees) && result.totalTurnAngleDegrees >= 0,
+            "Endliche, nichtnegative Winkelsumme erwartet");
+        client.assert(Number.isFinite(result.score) && result.score >= 0,
+            "Endlicher, nichtnegativer Score erwartet");
+        const expected = result.totalTurnAngleDegrees / result.distanceKm;
+        client.assert(Math.abs(result.score - expected) <= 1e-8 * Math.max(1, expected),
+            "Score stimmt nicht mit der Formel überein");
+    });
+%}
 
 ### Ungültige Koordinaten (erwartet HTTP 400)
-POST http://localhost:8081/api/routes
+POST {{baseUrl}}/api/routes
 Content-Type: application/json
 Accept: application/problem+json
 
@@ -47,8 +64,14 @@ Accept: application/problem+json
   }
 }
 
+> {%
+    client.test("Ungültige Koordinaten werden abgelehnt", function () {
+        client.assert(response.status === 400, "Erwartet HTTP 400");
+    });
+%}
+
 ### Fehlendes Ziel (erwartet HTTP 400)
-POST http://localhost:8081/api/routes
+POST {{baseUrl}}/api/routes
 Content-Type: application/json
 Accept: application/problem+json
 
@@ -58,3 +81,9 @@ Accept: application/problem+json
     "longitude": 9.173
   }
 }
+
+> {%
+    client.test("Fehlendes Ziel wird abgelehnt", function () {
+        client.assert(response.status === 400, "Erwartet HTTP 400");
+    });
+%}
