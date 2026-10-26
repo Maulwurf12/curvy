@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: curvy
+
+server:
+  port: 8081
+
+brouter:
+  base-url: https://brouter.de

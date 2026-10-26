@@ -1,0 +1,60 @@
+### Route berechnen (Standardprofil aus application.yaml)
+POST http://localhost:8081/api/routes
+Content-Type: application/json
+Accept: application/json
+
+{
+  "start": {
+    "latitude": 47.678,
+    "longitude": 9.173
+  },
+  "destination": {
+    "latitude": 47.566,
+    "longitude": 10.700
+  }
+}
+
+### Route mit explizitem BRouter-Profil berechnen
+POST http://localhost:8081/api/routes
+Content-Type: application/json
+Accept: application/json
+
+{
+  "start": {
+    "latitude": 47.678,
+    "longitude": 9.173
+  },
+  "destination": {
+    "latitude": 47.566,
+    "longitude": 10.700
+  },
+  "profile": "car-fast"
+}
+
+### Ungültige Koordinaten (erwartet HTTP 400)
+POST http://localhost:8081/api/routes
+Content-Type: application/json
+Accept: application/problem+json
+
+{
+  "start": {
+    "latitude": 120.0,
+    "longitude": 9.173
+  },
+  "destination": {
+    "latitude": 47.566,
+    "longitude": 10.700
+  }
+}
+
+### Fehlendes Ziel (erwartet HTTP 400)
+POST http://localhost:8081/api/routes
+Content-Type: application/json
+Accept: application/problem+json
+
+{
+  "start": {
+    "latitude": 47.678,
+    "longitude": 9.173
+  }
+}
