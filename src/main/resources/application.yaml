@@ -7,3 +7,7 @@ server:
 
 brouter:
   base-url: https://brouter.de
+
+curvy:
+  # Vorläufiger Startwert in Grad/km; später anhand echter Strecken kalibrieren.
+  degrees-per-km-for-full-score: 180

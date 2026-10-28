@@ -11,11 +11,15 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.json.JsonMapper;
 
+import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -36,7 +40,7 @@ class RouteControllerTests {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://brouter.example");
         server = MockRestServiceServer.bindTo(builder).build();
         var routingService = new CurvyRoutingService(
-                new BRouterService(builder.build()), new CurvinessScorer());
+                new BRouterService(builder.build()), new CurvinessScorer(180));
         mockMvc = MockMvcBuilders.standaloneSetup(new RouteController(routingService))
                 .setControllerAdvice(new ApiExceptionHandler()).build();
     }
@@ -59,7 +63,10 @@ class RouteControllerTests {
                 .andExpect(jsonPath("$.coordinates[2].longitude").value(1.0))
                 .andExpect(jsonPath("$.curviness.distanceKm").isNumber())
                 .andExpect(jsonPath("$.curviness.totalTurnAngleDegrees").isNumber())
-                .andExpect(jsonPath("$.curviness.score").isNumber());
+                .andExpect(jsonPath("$.curviness.degreesPerKm").isNumber())
+                .andExpect(jsonPath("$.curviness.score").isNumber())
+                .andExpect(jsonPath("$.targetScore").value(nullValue()))
+                .andExpect(jsonPath("$.scoreDeviation").value(nullValue()));
         server.verify();
     }
 
@@ -90,9 +97,61 @@ class RouteControllerTests {
     @Test
     void rejectsInvalidRequestsWithoutCallingBRouter() throws Exception {
         mockMvc.perform(post("/api/routes").contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON)
                         .content(REQUEST.replace("\"latitude\": 0.0", "\"latitude\": 91.0")))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
         server.verify();
+    }
+
+    @Test
+    void rejectsMissingDestinationWithTheHttpClientAcceptHeader() throws Exception {
+        mockMvc.perform(post("/api/routes").contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON)
+                        .content("""
+                                {"start": {"latitude": 0.0, "longitude": 0.0}}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON));
+        server.verify();
+    }
+
+    @Test
+    void acceptsATargetScoreAndReturnsTheActualScoreDeviation() throws Exception {
+        for (int index = 0; index < 3; index++) {
+            String coordinates = index == 1 ? "[[0,0],[1,1],[2,0]]" : "[[0,0],[1,0],[2,0]]";
+            server.expect(requestTo(url(index))).andRespond(withSuccess(
+                    "{\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":"
+                            + coordinates + "}}]}", MediaType.APPLICATION_JSON));
+        }
+
+        var response = mockMvc.perform(post("/api/routes").contentType(MediaType.APPLICATION_JSON)
+                        .content(requestWithTargetScore("70")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alternativeIdx").value(1))
+                .andExpect(jsonPath("$.targetScore").value(70.0))
+                .andExpect(jsonPath("$.scoreDeviation").isNumber())
+                .andReturn().getResponse();
+
+        var body = JsonMapper.builder().build().readTree(response.getContentAsString());
+        double actualScore = body.path("curviness").path("score").asDouble();
+        assertEquals(70 - actualScore, body.path("scoreDeviation").asDouble(), 1e-8);
+        server.verify();
+    }
+
+    @Test
+    void rejectsInvalidTargetScoresWithoutCallingBRouter() throws Exception {
+        for (String targetScore : new String[]{"-1", "100.1", "1e400", "\"not-a-number\""}) {
+            mockMvc.perform(post("/api/routes").contentType(MediaType.APPLICATION_JSON)
+                            .accept(MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON)
+                            .content(requestWithTargetScore(targetScore)))
+                    .andExpect(status().isBadRequest());
+        }
+        server.verify();
+    }
+
+    private String requestWithTargetScore(String value) {
+        return REQUEST.replace("\"start\":", "\"targetScore\": " + value + ", \"start\":");
     }
 
     private String url(int index) {

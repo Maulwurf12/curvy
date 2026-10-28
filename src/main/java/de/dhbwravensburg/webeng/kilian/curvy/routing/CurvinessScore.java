@@ -1,5 +1,10 @@
 package de.dhbwravensburg.webeng.kilian.curvy.routing;
 
-/** Ergebnis der Kurvenbewertung; der Score hat die Einheit Grad pro Kilometer. */
-public record CurvinessScore(double distanceKm, double totalTurnAngleDegrees, double score) {
+/** Kurvenbewertung mit dem Rohwert in Grad pro Kilometer und dem Score von 0 bis 100. */
+public record CurvinessScore(
+        double distanceKm,
+        double totalTurnAngleDegrees,
+        double degreesPerKm,
+        double score
+) {
 }

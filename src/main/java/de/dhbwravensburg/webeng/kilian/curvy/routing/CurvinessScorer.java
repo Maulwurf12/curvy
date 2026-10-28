@@ -1,6 +1,7 @@
 package de.dhbwravensburg.webeng.kilian.curvy.routing;
 
 import de.dhbwravensburg.webeng.kilian.curvy.api.Coordinate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -10,7 +11,17 @@ public class CurvinessScorer {
 
     private static final double EARTH_RADIUS_KM = 6371.0088;
 
-    /** Summiert absolute Richtungswechsel pro Kilometer; überspringt doppelte Punkte. */
+    private final double degreesPerKmForFullScore;
+
+    public CurvinessScorer(
+            @Value("${curvy.degrees-per-km-for-full-score}") double degreesPerKmForFullScore) {
+        if (!Double.isFinite(degreesPerKmForFullScore) || degreesPerKmForFullScore <= 0) {
+            throw new IllegalArgumentException("Der Referenzwert für 100 Punkte muss endlich und größer als 0 sein.");
+        }
+        this.degreesPerKmForFullScore = degreesPerKmForFullScore;
+    }
+
+    /** Bewertet Richtungswechsel pro Kilometer auf einer festen Skala von 0 bis 100. */
     public CurvinessScore score(List<Coordinate> coordinates) {
         if (coordinates == null) {
             throw new IllegalArgumentException("Streckenkoordinaten müssen angegeben werden.");
@@ -46,8 +57,9 @@ public class CurvinessScorer {
             previous = current;
         }
 
-        double score = distanceKm == 0 ? 0 : totalTurnAngleDegrees / distanceKm;
-        return new CurvinessScore(distanceKm, totalTurnAngleDegrees, score);
+        double degreesPerKm = distanceKm == 0 ? 0 : totalTurnAngleDegrees / distanceKm;
+        double score = Math.min(100, 100 * (degreesPerKm / degreesPerKmForFullScore));
+        return new CurvinessScore(distanceKm, totalTurnAngleDegrees, degreesPerKm, score);
     }
 
     private double distanceKm(Coordinate from, Coordinate to) {

@@ -4,5 +4,11 @@ import de.dhbwravensburg.webeng.kilian.curvy.routing.CurvinessScore;
 
 import java.util.List;
 
-public record RouteResponse(List<Coordinate> coordinates, CurvinessScore curviness, int alternativeIdx) {
+public record RouteResponse(
+        List<Coordinate> coordinates,
+        CurvinessScore curviness,
+        int alternativeIdx,
+        Double targetScore,
+        Double scoreDeviation
+) {
 }

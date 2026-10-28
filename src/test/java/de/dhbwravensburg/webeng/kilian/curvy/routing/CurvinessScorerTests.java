@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CurvinessScorerTests {
 
-    private final CurvinessScorer scorer = new CurvinessScorer();
+    private final CurvinessScorer scorer = new CurvinessScorer(180);
 
     @Test
     void straightRouteHasZeroScoreAndDistanceInKilometers() {
@@ -31,7 +31,49 @@ class CurvinessScorerTests {
 
             assertEquals(90, result.totalTurnAngleDegrees(), 1e-10);
             assertEquals(222.39016, result.distanceKm(), 0.00001);
-            assertEquals(0.404694, result.score(), 0.000001);
+            assertEquals(0.404694, result.degreesPerKm(), 0.000001);
+            assertEquals(0.224830, result.score(), 0.000001);
+        }
+    }
+
+    @Test
+    void normalizesKnownCurvesAndCapsTheScoreAt100() {
+        // Jede Strecke hat genau eine 90°-Kurve und die angegebene Länge.
+        double[][] examples = {
+                {2.0, 45.0, 25.0},
+                {1.0, 90.0, 50.0},
+                {2.0 / 3, 135.0, 75.0},
+                {0.5, 180.0, 100.0},
+                {0.25, 360.0, 100.0}
+        };
+
+        for (double[] example : examples) {
+            CurvinessScore result = scorer.score(rightAngleRouteWithLengthKm(example[0]));
+
+            assertEquals(example[0], result.distanceKm(), 1e-8);
+            assertEquals(90, result.totalTurnAngleDegrees(), 1e-8);
+            assertEquals(example[1], result.degreesPerKm(), 1e-8);
+            assertEquals(example[2], result.score(), 1e-8);
+        }
+    }
+
+    @Test
+    void referenceValueChangesTheScaleWhilePreservingTheRawMeasurement() {
+        var route = rightAngleRouteWithLengthKm(1);
+        CurvinessScore defaultScale = scorer.score(route);
+        CurvinessScore higherReference = new CurvinessScorer(360).score(route);
+
+        assertEquals(50, defaultScale.score(), 1e-8);
+        assertEquals(25, higherReference.score(), 1e-8);
+        assertEquals(defaultScale.degreesPerKm(), higherReference.degreesPerKm());
+        assertEquals(defaultScale.distanceKm(), higherReference.distanceKm());
+    }
+
+    @Test
+    void rejectsNonPositiveAndNonFiniteReferenceValues() {
+        for (double reference : new double[]{0, -1, Double.NaN,
+                Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY}) {
+            assertThrows(IllegalArgumentException.class, () -> new CurvinessScorer(reference));
         }
     }
 
@@ -74,7 +116,7 @@ class CurvinessScorerTests {
     @Test
     void handlesEmptyShortAndZeroLengthRoutes() {
         Coordinate point = new Coordinate(47.678, 9.173);
-        CurvinessScore zero = new CurvinessScore(0, 0, 0);
+        CurvinessScore zero = new CurvinessScore(0, 0, 0, 0);
         assertEquals(zero, scorer.score(List.of()));
         assertEquals(zero, scorer.score(List.of(point)));
         assertEquals(zero, scorer.score(List.of(point, point, point)));
@@ -92,5 +134,11 @@ class CurvinessScorerTests {
                 new Coordinate(0.0, 181.0), new Coordinate(null, 0.0))) {
             assertThrows(IllegalArgumentException.class, () -> scorer.score(List.of(point)));
         }
+    }
+
+    private List<Coordinate> rightAngleRouteWithLengthKm(double lengthKm) {
+        double halfLengthInDegrees = Math.toDegrees(lengthKm / 2 / 6371.0088);
+        return List.of(new Coordinate(0.0, 0.0), new Coordinate(0.0, halfLengthInDegrees),
+                new Coordinate(halfLengthInDegrees, halfLengthInDegrees));
     }
 }

@@ -39,14 +39,14 @@ class RouteFixtureTests {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://brouter.example");
         server = MockRestServiceServer.bindTo(builder).build();
         bRouterService = new BRouterService(builder.build());
-        var routingService = new CurvyRoutingService(bRouterService, new CurvinessScorer());
+        var routingService = new CurvyRoutingService(bRouterService, new CurvinessScorer(180));
         mockMvc = MockMvcBuilders.standaloneSetup(new RouteController(routingService))
                 .setControllerAdvice(new ApiExceptionHandler()).build();
     }
 
     @Test
     void fixtureGeometriesMatchIndependentlyCalculatedScores() throws IOException {
-        var scorer = new CurvinessScorer();
+        var scorer = new CurvinessScorer(180);
         for (int index = 0; index < 3; index++) {
             var coordinates = bRouterService.extractCoordinates(fixture("alternative-" + index + ".geojson"));
             assertScore(expectedScore(index), scorer.score(coordinates));
@@ -65,6 +65,8 @@ class RouteFixtureTests {
 
         assertEquals(expected.alternativeIdx(), actual.alternativeIdx());
         assertEquals(expected.coordinates(), actual.coordinates());
+        assertEquals(expected.targetScore(), actual.targetScore());
+        assertEquals(expected.scoreDeviation(), actual.scoreDeviation());
         assertScore(expected.curviness(), actual.curviness());
         server.verify();
     }
@@ -103,7 +105,8 @@ class RouteFixtureTests {
     private void assertScore(CurvinessScore expected, CurvinessScore actual) {
         assertEquals(expected.distanceKm(), actual.distanceKm(), TOLERANCE, "Streckenlänge in km");
         assertEquals(expected.totalTurnAngleDegrees(), actual.totalTurnAngleDegrees(), TOLERANCE, "Winkelsumme");
-        assertEquals(expected.score(), actual.score(), TOLERANCE, "Score in Grad pro km");
+        assertEquals(expected.degreesPerKm(), actual.degreesPerKm(), TOLERANCE, "Grad pro km");
+        assertEquals(expected.score(), actual.score(), TOLERANCE, "Score von 0 bis 100");
     }
 
     private String fixture(String filename) throws IOException {

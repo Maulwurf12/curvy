@@ -15,7 +15,9 @@ import org.springframework.web.client.RestClientException;
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -28,7 +30,7 @@ class CurvyRoutingServiceTests {
     private static final String BENT = "[[0,0],[1,1],[2,0]]";
     private static final String CURVY = "[[0,0],[0,1],[1,1],[1,0],[2,0]]";
     private static final RouteRequest REQUEST = new RouteRequest(
-            new Coordinate(0.0, 0.0), new Coordinate(0.0, 2.0));
+            new Coordinate(0.0, 0.0), new Coordinate(0.0, 2.0), null);
 
     private MockRestServiceServer server;
     private CurvyRoutingService service;
@@ -39,7 +41,7 @@ class CurvyRoutingServiceTests {
         RestClient.Builder builder = RestClient.builder().baseUrl("https://brouter.example");
         server = MockRestServiceServer.bindTo(builder).build();
         bRouterService = new BRouterService(builder.build());
-        service = new CurvyRoutingService(bRouterService, new CurvinessScorer());
+        service = new CurvyRoutingService(bRouterService, new CurvinessScorer(180));
     }
 
     @Test
@@ -54,7 +56,9 @@ class CurvyRoutingServiceTests {
 
             assertEquals(winner, result.alternativeIdx());
             assertEquals(bRouterService.extractCoordinates(geoJson(CURVY)), result.coordinates());
-            assertEquals(new CurvinessScorer().score(result.coordinates()), result.curviness());
+            assertEquals(new CurvinessScorer(180).score(result.coordinates()), result.curviness());
+            assertNull(result.targetScore());
+            assertNull(result.scoreDeviation());
             server.verify();
         }
     }
@@ -146,8 +150,124 @@ class CurvyRoutingServiceTests {
     @Test
     void rejectsInvalidRequestsBeforeMakingAnyUpstreamCall() {
         assertThrows(IllegalArgumentException.class, () -> service.calculateRoute(
-                new RouteRequest(new Coordinate(91.0, 0.0), REQUEST.destination())));
+                new RouteRequest(new Coordinate(91.0, 0.0), REQUEST.destination(), null)));
         server.verify();
+    }
+
+    @Test
+    void selectsTheClosestScoreTo70InsteadOfTheCurviestRoute() {
+        service = new CurvyRoutingService(bRouterService, new CurvinessScorer(0.4));
+        expectRoute(0, CURVY);
+        expectRoute(1, BENT);
+        expectRoute(2, STRAIGHT);
+
+        RouteResponse result = service.calculateRoute(requestWithTargetScore(70));
+
+        assertEquals(1, result.alternativeIdx());
+        assertEquals(70, result.targetScore());
+        assertTrue(result.curviness().score() > 70 && result.curviness().score() < 73);
+        assertEquals(Math.abs(result.curviness().score() - 70), result.scoreDeviation(), 1e-8);
+        server.verify();
+    }
+
+    @Test
+    void selectsAnExactScoreOf70WhenAvailable() {
+        // Diese Route hat 360° auf vier Grad Äquator-/Meridianstrecke.
+        double degreesPerKm = 360 / (4 * Math.PI * 6371.0088 / 180);
+        service = new CurvyRoutingService(bRouterService, new CurvinessScorer(degreesPerKm / 0.7));
+        expectRoute(0, STRAIGHT);
+        expectRoute(1, "[[0,0],[1,0],[1,1],[1,0],[2,0]]");
+        expectRoute(2, CURVY);
+
+        RouteResponse result = service.calculateRoute(requestWithTargetScore(70));
+
+        assertEquals(1, result.alternativeIdx());
+        assertEquals(70, result.curviness().score(), 1e-8);
+        assertEquals(0, result.scoreDeviation(), 1e-8);
+        server.verify();
+    }
+
+    @Test
+    void targetZeroSelectsTheStraightRoute() {
+        expectRoute(0, CURVY);
+        expectRoute(1, BENT);
+        expectRoute(2, STRAIGHT);
+
+        RouteResponse result = service.calculateRoute(requestWithTargetScore(0));
+
+        assertEquals(2, result.alternativeIdx());
+        assertEquals(0, result.curviness().score());
+        assertEquals(0, result.targetScore());
+        assertEquals(0, result.scoreDeviation());
+        server.verify();
+    }
+
+    @Test
+    void target100SelectsTheFirstRouteThatReaches100() {
+        service = new CurvyRoutingService(bRouterService, new CurvinessScorer(0.1));
+        expectRoute(0, BENT);
+        expectRoute(1, CURVY);
+        expectRoute(2, STRAIGHT);
+
+        RouteResponse result = service.calculateRoute(requestWithTargetScore(100));
+
+        assertEquals(0, result.alternativeIdx());
+        assertEquals(100, result.curviness().score());
+        assertEquals(0, result.scoreDeviation());
+        server.verify();
+    }
+
+    @Test
+    void withoutATargetTheRawMeasurementBreaksTiesAt100() {
+        service = new CurvyRoutingService(bRouterService, new CurvinessScorer(0.1));
+        expectRoute(0, BENT);
+        expectRoute(1, CURVY);
+        expectRoute(2, STRAIGHT);
+
+        RouteResponse result = service.calculateRoute(REQUEST);
+
+        assertEquals(1, result.alternativeIdx());
+        assertEquals(100, result.curviness().score());
+        assertNull(result.targetScore());
+        server.verify();
+    }
+
+    @Test
+    void equalDistancesToTargetKeepTheLowerAlternativeIndex() {
+        service = new CurvyRoutingService(bRouterService, new CurvinessScorer(0.1));
+        expectRoute(0, STRAIGHT);
+        expectRoute(1, CURVY);
+        expectRoute(2, BENT);
+
+        RouteResponse result = service.calculateRoute(requestWithTargetScore(50));
+
+        assertEquals(0, result.alternativeIdx());
+        assertEquals(50, result.scoreDeviation());
+        server.verify();
+    }
+
+    @Test
+    void targetSelectionStillUsesAvailableCandidatesAfterAFailure() {
+        service = new CurvyRoutingService(bRouterService, new CurvinessScorer(0.4));
+        expect(0, withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+        expectRoute(1, BENT);
+        expectRoute(2, CURVY);
+
+        assertEquals(1, service.calculateRoute(requestWithTargetScore(70)).alternativeIdx());
+        server.verify();
+    }
+
+    @Test
+    void rejectsInvalidTargetScoresBeforeMakingAnyUpstreamCall() {
+        for (double targetScore : new double[]{-1, 101, Double.NaN, Double.POSITIVE_INFINITY}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.calculateRoute(requestWithTargetScore(targetScore)));
+        }
+        server.verify();
+    }
+
+    private RouteRequest requestWithTargetScore(double targetScore) {
+        return new RouteRequest(REQUEST.start(), REQUEST.destination(), targetScore);
     }
 
     private void expectRoute(int index, String coordinates) {

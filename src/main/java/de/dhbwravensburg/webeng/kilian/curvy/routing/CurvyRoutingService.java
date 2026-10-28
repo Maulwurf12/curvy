@@ -39,9 +39,13 @@ public class CurvyRoutingService {
                     throw new RestClientException("BRouter hat eine Route ohne Streckenlänge geliefert.");
                 }
 
-                // Bei gleichem Score bleibt der Kandidat mit dem kleineren Index erhalten.
-                if (bestRoute == null || curviness.score() > bestRoute.curviness().score()) {
-                    bestRoute = new RouteResponse(coordinates, curviness, alternativeIdx);
+                Double targetScore = request.targetScore();
+                Double scoreDeviation = targetScore == null ? null : Math.abs(curviness.score() - targetScore);
+                RouteResponse candidate = new RouteResponse(
+                        coordinates, curviness, alternativeIdx, targetScore, scoreDeviation);
+
+                if (bestRoute == null || isBetterRoute(candidate, bestRoute)) {
+                    bestRoute = candidate;
                 }
             } catch (RestClientException exception) {
                 lastFailure = exception;
@@ -54,5 +58,15 @@ public class CurvyRoutingService {
             throw new RestClientException("Keine gültige BRouter-Route verfügbar.", lastFailure);
         }
         return bestRoute;
+    }
+
+    private boolean isBetterRoute(RouteResponse candidate, RouteResponse currentBest) {
+        // Bei Gleichstand bleibt die zuerst geprüfte Alternative erhalten.
+        if (candidate.targetScore() != null) {
+            return candidate.scoreDeviation() < currentBest.scoreDeviation();
+        }
+
+        // Der Rohwert unterscheidet auch besonders kurvige Routen mit jeweils 100 Punkten.
+        return candidate.curviness().degreesPerKm() > currentBest.curviness().degreesPerKm();
     }
 }

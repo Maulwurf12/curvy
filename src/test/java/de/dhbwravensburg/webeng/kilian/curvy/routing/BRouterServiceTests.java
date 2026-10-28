@@ -40,7 +40,7 @@ class BRouterServiceTests {
             BRouterService service = new BRouterService(builder.build());
             String geoJson = service.calculateRoute(new RouteRequest(
                     new Coordinate(47.678, 9.173),
-                    new Coordinate(47.566, 10.7)
+                    new Coordinate(47.566, 10.7), null
             ), alternativeIdx);
 
             assertEquals("{\"type\":\"FeatureCollection\",\"features\":[]}", geoJson);
@@ -52,7 +52,7 @@ class BRouterServiceTests {
     void rejectsNegativeAlternativeIndices() {
         BRouterService service = new BRouterService(RestClient.create());
         assertThrows(IllegalArgumentException.class, () -> service.calculateRoute(new RouteRequest(
-                new Coordinate(0.0, 0.0), new Coordinate(0.0, 2.0)), -1));
+                new Coordinate(0.0, 0.0), new Coordinate(0.0, 2.0), null), -1));
     }
 
     @Test
