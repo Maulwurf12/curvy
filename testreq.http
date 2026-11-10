@@ -146,3 +146,39 @@ Accept: application/json, application/problem+json
         client.assert(response.status === 400, "Erwartet HTTP 400");
     });
 %}
+
+### Wunschscore 70, höchstens 20 Prozent länger als die kürzeste gültige Alternative
+POST {{baseUrl}}/api/routes
+Content-Type: application/json
+Accept: application/json, application/problem+json
+
+{
+  "start": {"latitude": 47.678, "longitude": 9.173},
+  "destination": {"latitude": 47.566, "longitude": 10.700},
+  "targetScore": 70,
+  "maxDetourFactor": 1.2
+}
+
+> {%
+    client.test("Route mit Umwegbegrenzung berechnet", function () {
+        client.assert(response.status === 200, "Erwartet HTTP 200");
+        client.assert(response.body.targetScore === 70, "Wunschwert muss erhalten bleiben");
+    });
+%}
+
+### Ungültiger Umwegfaktor (kleiner als 1, erwartet HTTP 400)
+POST {{baseUrl}}/api/routes
+Content-Type: application/json
+Accept: application/json, application/problem+json
+
+{
+  "start": {"latitude": 47.678, "longitude": 9.173},
+  "destination": {"latitude": 47.566, "longitude": 10.700},
+  "maxDetourFactor": 0.5
+}
+
+> {%
+    client.test("Ungültiger Umwegfaktor wird abgelehnt", function () {
+        client.assert(response.status === 400, "Erwartet HTTP 400");
+    });
+%}

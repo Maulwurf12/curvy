@@ -72,7 +72,7 @@ class RouteFixtureTests {
     }
 
     @Test
-    void apiSelectsNextBestCandidateWhenTheWinnerIsUnavailable() throws Exception {
+    void apiRejectsTheLongDetourWhenTheWinnerIsUnavailable() throws Exception {
         for (int index = 0; index < 3; index++) {
             var expectation = server.expect(requestTo(url(index)));
             if (index == 1) {
@@ -85,9 +85,9 @@ class RouteFixtureTests {
 
         RouteResponse actual = calculateRoute();
 
-        assertEquals(2, actual.alternativeIdx());
-        assertEquals(bRouterService.extractCoordinates(fixture("alternative-2.geojson")), actual.coordinates());
-        assertScore(expectedScore(2), actual.curviness());
+        assertEquals(0, actual.alternativeIdx());
+        assertEquals(bRouterService.extractCoordinates(fixture("alternative-0.geojson")), actual.coordinates());
+        assertScore(expectedScore(0), actual.curviness());
         server.verify();
     }
 

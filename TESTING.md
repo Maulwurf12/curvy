@@ -34,7 +34,8 @@ Score 100. Diese Einstellung ist noch nicht mit echten Straßen kalibriert.
 
 **Erwarteter Gewinner ohne Wunschwert: Alternative 1.** Alternative 0 ist kürzer
 und Alternative 2 hat mehr Kurvenwinkel, aber Alternative 1 hat den höchsten
-Rohwert in °/km. Wenn Alternative 1 ausfällt, muss Alternative 2 gewinnen.
+Rohwert in °/km. Wenn Alternative 1 ausfällt, muss Alternative 0 gewinnen: Alternative 2
+überschreitet die standardmäßig erlaubte Länge von 1,5 × 157,249598 km.
 Die niedrigen Scores sind beabsichtigt: Die künstlichen Strecken enthalten nur
 wenige Kurven auf mehreren hundert Kilometern.
 
@@ -93,3 +94,16 @@ Bei echten Routen gibt es keinen festen erwarteten Score oder Gewinner: Die
 Antwort hängt von den gelieferten BRouter-Geometrien ab. Die HTTP-Prüfungen
 kontrollieren die Antwort auf Plausibilität; die korrekte Auswahl zwischen
 bekannten Kandidaten prüfen die reproduzierbaren Tests oben.
+
+## Umwegbegrenzung prüfen
+
+```bash
+./mvnw -Dtest=CurvyRoutingServiceTests,RouteControllerTests,RouteFixtureTests test
+```
+
+Geprüft werden Standardfaktor 1,5, Faktor 1, eine größere erlaubte Grenze,
+eine Route genau auf der Grenze, ungültige Faktoren, fehlende Alternativen
+und die Auswahl nach Wunschscore innerhalb der Grenze. Die kürzeste Alternative
+wird auch berücksichtigt, wenn BRouter sie erst zuletzt liefert.
+Die älteren isolierten Score-Auswahltests verwenden ausdrücklich einen großen
+Faktor, damit sie weiterhin die Bewertung unabhängig von der Begrenzung prüfen.

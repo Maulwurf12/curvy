@@ -54,4 +54,5 @@ Strecken und zusätzlich eine noch nicht zur Kalibrierung verwendete Strecke
 prüfen. Die automatischen Tests verwenden eigene feste Referenzen und prüfen
 weiter die Mathematik, nicht das Fahrgefühl echter Straßen.
 
-Die Umwegbegrenzung folgt als nächster Schritt nach dieser Abstimmung.
+Die Kalibrierungsanfrage verwendet die standardmäßige Umwegbegrenzung von
+Faktor 1,5. Bewerte deshalb die tatsächlich unter dieser Grenze gewählte Route.

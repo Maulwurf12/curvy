@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -27,7 +28,8 @@ public class CurvyRoutingService {
     public RouteResponse calculateRoute(RouteRequest request) {
         request.validate();
 
-        RouteResponse bestRoute = null;
+        List<RouteResponse> candidates = new ArrayList<>();
+        double shortestDistanceKm = Double.POSITIVE_INFINITY;
         RestClientException lastFailure = null;
 
         for (int alternativeIdx = 0; alternativeIdx < ALTERNATIVE_COUNT; alternativeIdx++) {
@@ -44,9 +46,8 @@ public class CurvyRoutingService {
                 RouteResponse candidate = new RouteResponse(
                         coordinates, curviness, alternativeIdx, targetScore, scoreDeviation);
 
-                if (bestRoute == null || isBetterRoute(candidate, bestRoute)) {
-                    bestRoute = candidate;
-                }
+                candidates.add(candidate);
+                shortestDistanceKm = Math.min(shortestDistanceKm, curviness.distanceKm());
             } catch (RestClientException exception) {
                 lastFailure = exception;
                 LOG.warn("BRouter-Alternative {} konnte nicht verwendet werden: {}",
@@ -54,9 +55,22 @@ public class CurvyRoutingService {
             }
         }
 
-        if (bestRoute == null) {
+        if (candidates.isEmpty()) {
             throw new RestClientException("Keine gültige BRouter-Route verfügbar.", lastFailure);
         }
+
+        // Erst nach allen Anfragen steht die kürzeste gültige Alternative fest.
+        RouteResponse bestRoute = null;
+        for (RouteResponse candidate : candidates) {
+            double detourFactor = candidate.curviness().distanceKm() / shortestDistanceKm;
+            if (detourFactor > request.allowedDetourFactor()) {
+                continue;
+            }
+            if (bestRoute == null || isBetterRoute(candidate, bestRoute)) {
+                bestRoute = candidate;
+            }
+        }
+        // Mindestens die kürzeste Route erfüllt jeden erlaubten Faktor (>= 1).
         return bestRoute;
     }
 

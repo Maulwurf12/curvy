@@ -48,7 +48,7 @@ class RouteControllerTests {
     @Test
     void returnsTheWinningGeometryScoreAndAlternativeIndexAsJson() throws Exception {
         for (int index = 0; index < 3; index++) {
-            String coordinates = index == 1 ? "[[0,0,400],[1,0,410],[1,1,420],[2,0,430]]"
+            String coordinates = index == 1 ? "[[0,0,400],[1,1,410],[2,0,420]]"
                     : "[[0,0],[1,0],[2,0]]";
             server.expect(requestTo(url(index))).andRespond(withSuccess(
                     "{\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":"
@@ -58,9 +58,9 @@ class RouteControllerTests {
         mockMvc.perform(post("/api/routes").contentType(MediaType.APPLICATION_JSON).content(REQUEST))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.alternativeIdx").value(1))
-                .andExpect(jsonPath("$.coordinates.length()").value(4))
-                .andExpect(jsonPath("$.coordinates[2].latitude").value(1.0))
-                .andExpect(jsonPath("$.coordinates[2].longitude").value(1.0))
+                .andExpect(jsonPath("$.coordinates.length()").value(3))
+                .andExpect(jsonPath("$.coordinates[1].latitude").value(1.0))
+                .andExpect(jsonPath("$.coordinates[1].longitude").value(1.0))
                 .andExpect(jsonPath("$.curviness.distanceKm").isNumber())
                 .andExpect(jsonPath("$.curviness.totalTurnAngleDegrees").isNumber())
                 .andExpect(jsonPath("$.curviness.degreesPerKm").isNumber())
@@ -145,6 +145,33 @@ class RouteControllerTests {
             mockMvc.perform(post("/api/routes").contentType(MediaType.APPLICATION_JSON)
                             .accept(MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON)
                             .content(requestWithTargetScore(targetScore)))
+                    .andExpect(status().isBadRequest());
+        }
+        server.verify();
+    }
+
+    @Test
+    void acceptsDetourFactorAndFiltersBeforeMatchingTheTargetScore() throws Exception {
+        for (int index = 0; index < 3; index++) {
+            String coordinates = index == 1 ? "[[0,0],[1,1],[2,0]]" : "[[0,0],[1,0],[2,0]]";
+            server.expect(requestTo(url(index))).andRespond(withSuccess(
+                    "{\"features\":[{\"geometry\":{\"type\":\"LineString\",\"coordinates\":"
+                            + coordinates + "}}]}", MediaType.APPLICATION_JSON));
+        }
+        mockMvc.perform(post("/api/routes").contentType(MediaType.APPLICATION_JSON)
+                        .content(requestWithTargetScore("70").replace("\"start\":", "\"maxDetourFactor\": 1, \"start\":")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alternativeIdx").value(0))
+                .andExpect(jsonPath("$.scoreDeviation").value(70.0));
+        server.verify();
+    }
+
+    @Test
+    void rejectsInvalidDetourFactorsWithoutCallingBRouter() throws Exception {
+        for (String factor : new String[]{"0.99", "-1", "1e400", "\"invalid\""}) {
+            mockMvc.perform(post("/api/routes").contentType(MediaType.APPLICATION_JSON)
+                            .accept(MediaType.APPLICATION_JSON, MediaType.APPLICATION_PROBLEM_JSON)
+                            .content(REQUEST.replace("\"start\":", "\"maxDetourFactor\": " + factor + ", \"start\":")))
                     .andExpect(status().isBadRequest());
         }
         server.verify();

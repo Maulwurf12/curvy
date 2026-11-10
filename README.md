@@ -3,7 +3,8 @@
 Curvy berechnet mit BRouter drei Routenkandidaten zwischen Start und Ziel
 (`alternativeidx` 0, 1 und 2) und bewertet sie mit einem Score von 0 bis 100.
 Ohne Wunschwert gewinnt die kurvigste Route. Mit `targetScore` gewinnt die
-Route, deren Score am nächsten am Wunschwert liegt.
+Route, deren Score am nächsten am Wunschwert liegt. Beide Auswahlen beachten
+die Umwegbegrenzung.
 
 ## Starten
 
@@ -32,7 +33,8 @@ Für einen Wunschwert ergänzt du die Anfrage um `"targetScore": 70`:
 {
   "start": {"latitude": 47.678, "longitude": 9.173},
   "destination": {"latitude": 47.566, "longitude": 10.700},
-  "targetScore": 70
+  "targetScore": 70,
+  "maxDetourFactor": 1.5
 }
 ```
 
@@ -65,6 +67,22 @@ ohne Wunschwert und mit der unten beschriebenen Standardkonfiguration:
   "scoreDeviation": null
 }
 ```
+
+## Umwegbegrenzung
+
+`maxDetourFactor` ist optional und standardmäßig `1.5` (auch bei `null`).
+Bei einer kürzesten gültigen Alternative von 100 km sind damit höchstens
+150 km erlaubt. `1` erlaubt nur die kürzesten Kandidaten, `2` bis zur doppelten
+Länge. Der Faktor muss endlich und mindestens 1 sein; ungültige Werte liefern
+HTTP 400, bevor BRouter aufgerufen wird.
+
+Zuerst werden alle gültigen Alternativen gesammelt. Zu lange Kandidaten werden
+ausgeschlossen, danach entscheiden Kurvigkeit beziehungsweise Wunschscore.
+Die Grenze gilt auch dann, wenn ein ausgeschlossener Kandidat den Wunschscore
+exakt erreicht. Mindestens die kürzeste gültige Route bleibt immer erlaubt.
+Fehlgeschlagene und ungültige Routen zählen nicht für die Vergleichslänge.
+Die Basis ist die kürzeste der gefundenen Alternativen, keine garantiert
+global kürzeste Route. Gemessen wird die Geometrielänge ohne Höhenprofil.
 
 ## Bewertung und Auswahl
 
@@ -112,8 +130,7 @@ von 0 bis 100 führen vor den
 BRouter-Anfragen zu HTTP `400`.
 
 Die Auswahl erfolgt unter den drei geprüften Alternativen. Gleichmäßige
-Messabstände, die Verteilung der Kurven, Kreuzungsabbiegungen und eine Begrenzung
-unnötiger Umwege sind mögliche spätere Verbesserungen. Score 100 bedeutet aktuell,
+Messabstände, die Verteilung der Kurven, Kreuzungsabbiegungen sind mögliche spätere Verbesserungen. Score 100 bedeutet aktuell,
 dass die mittlere Kurvendichte den Referenzwert erreicht; er garantiert keine
 durchgehend kurvige Strecke.
 

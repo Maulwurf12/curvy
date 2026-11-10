@@ -30,7 +30,7 @@ class CurvyRoutingServiceTests {
     private static final String BENT = "[[0,0],[1,1],[2,0]]";
     private static final String CURVY = "[[0,0],[0,1],[1,1],[1,0],[2,0]]";
     private static final RouteRequest REQUEST = new RouteRequest(
-            new Coordinate(0.0, 0.0), new Coordinate(0.0, 2.0), null);
+            new Coordinate(0.0, 0.0), new Coordinate(0.0, 2.0), null, 20.0);
 
     private MockRestServiceServer server;
     private CurvyRoutingService service;
@@ -266,8 +266,86 @@ class CurvyRoutingServiceTests {
         server.verify();
     }
 
+    @Test
+    void defaultLimitExcludesTheCurviestRouteEvenWhenTheShortestArrivesLast() {
+        expectRoute(0, CURVY);
+        expectRoute(1, BENT);
+        expectRoute(2, STRAIGHT);
+
+        RouteResponse result = service.calculateRoute(limitedRequest(null, null));
+
+        assertEquals(1, result.alternativeIdx());
+        server.verify();
+    }
+
+    @Test
+    void targetScoreCannotOverrideTheDetourLimit() {
+        service = new CurvyRoutingService(bRouterService, new CurvinessScorer(0.4));
+        expectRoute(0, CURVY);
+        expectRoute(1, BENT);
+        expectRoute(2, STRAIGHT);
+
+        assertEquals(1, service.calculateRoute(limitedRequest(100.0, 1.5)).alternativeIdx());
+        server.verify();
+    }
+
+    @Test
+    void factorOneAllowsOnlyTheShortestRoutes() {
+        expectRoute(0, BENT);
+        expectRoute(1, STRAIGHT);
+        expectRoute(2, STRAIGHT);
+
+        assertEquals(1, service.calculateRoute(limitedRequest(null, 1.0)).alternativeIdx());
+        server.verify();
+    }
+
+    @Test
+    void largerFactorAllowsTheCurvierDetour() {
+        expectRoute(0, STRAIGHT);
+        expectRoute(1, CURVY);
+        expectRoute(2, BENT);
+
+        assertEquals(1, service.calculateRoute(limitedRequest(null, 2.1)).alternativeIdx());
+        server.verify();
+    }
+
+    @Test
+    void routeExactlyAtTheLimitIsAllowed() {
+        expectRoute(0, STRAIGHT);
+        // Drei Grad Gesamtlänge statt zwei, mit zwei Kehrtwenden.
+        expectRoute(1, "[[0,0],[1.5,0],[1,0],[2,0]]");
+        expectRoute(2, CURVY);
+
+        assertEquals(1, service.calculateRoute(limitedRequest(null, 1.5)).alternativeIdx());
+        server.verify();
+    }
+
+    @Test
+    void failedAndZeroLengthRoutesDoNotSetTheDistanceLimit() {
+        expect(0, withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+        expectRoute(1, "[[0,0],[0,0]]");
+        expectRoute(2, CURVY);
+
+        assertEquals(2, service.calculateRoute(limitedRequest(null, 1.0)).alternativeIdx());
+        server.verify();
+    }
+
+    @Test
+    void invalidDetourFactorsAreRejectedBeforeAnyBRouterCall() {
+        for (double factor : new double[]{0, -1, 0.99, Double.NaN,
+                Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY}) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.calculateRoute(limitedRequest(null, factor)));
+        }
+        server.verify();
+    }
+
+    private RouteRequest limitedRequest(Double targetScore, Double maxDetourFactor) {
+        return new RouteRequest(REQUEST.start(), REQUEST.destination(), targetScore, maxDetourFactor);
+    }
+
     private RouteRequest requestWithTargetScore(double targetScore) {
-        return new RouteRequest(REQUEST.start(), REQUEST.destination(), targetScore);
+        return new RouteRequest(REQUEST.start(), REQUEST.destination(), targetScore, 20.0);
     }
 
     private void expectRoute(int index, String coordinates) {
