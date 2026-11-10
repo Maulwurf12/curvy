@@ -82,6 +82,9 @@ score = min(100, 100 × degreesPerKm / Referenzwert)
 
 Der Referenzwert steht in `application.yaml`:
 
+Für die Abstimmung mit bekannten Strecken gibt es [CALIBRATION.md](CALIBRATION.md)
+und die ausführbare Anfrage `calibration.http`.
+
 ```yaml
 curvy:
   degrees-per-km-for-full-score: 180

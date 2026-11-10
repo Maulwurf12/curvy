@@ -1,0 +1,62 @@
+# Beispielkoordinaten: durch eine bekannte Strecke ersetzen.
+@baseUrl = http://localhost:8081
+@startLatitude = 47.678
+@startLongitude = 9.173
+@destinationLatitude = 47.566
+@destinationLongitude = 10.700
+
+### Bekannte Route messen, ohne Auswahl nach Wunschscore
+POST {{baseUrl}}/api/routes
+Content-Type: application/json
+Accept: application/json, application/problem+json
+
+{
+  "start": {"latitude": {{startLatitude}}, "longitude": {{startLongitude}}},
+  "destination": {"latitude": {{destinationLatitude}}, "longitude": {{destinationLongitude}}}
+}
+
+> {%
+    // Erst die zurückgegebene Route beurteilen, dann hier deine Bewertung eintragen.
+    // Beispiel: const desiredScore = 50;
+    const desiredScore = null;
+
+    client.test("Route erfolgreich gemessen", function () {
+        client.assert(response.status === 200, "Erwartet HTTP 200, erhalten: " + response.status);
+        client.assert(Number.isFinite(response.body.curviness.degreesPerKm)
+            && response.body.curviness.degreesPerKm >= 0, "Gültigen Rohwert erwartet");
+    });
+
+    if (response.status === 200) {
+        const measurement = response.body.curviness;
+        const degreesPerKm = measurement.degreesPerKm;
+        client.log("Gewählte Alternative: " + response.body.alternativeIdx);
+        client.log("Länge: " + measurement.distanceKm + " km");
+        client.log("Kurvendichte: " + degreesPerKm + " Grad/km");
+        client.log("Aktueller Score: " + measurement.score);
+
+        if (desiredScore === null) {
+            client.log("Noch keine persönliche Bewertung. Siehe CALIBRATION.md.");
+        } else {
+            client.assert(Number.isFinite(desiredScore) && desiredScore >= 0 && desiredScore <= 100,
+                "Die persönliche Bewertung muss zwischen 0 und 100 liegen");
+
+            if (desiredScore === 0) {
+                client.log("Gerade Kontrollstrecke: Rohwert sollte nahe 0 liegen."
+                    + " Aus Score 0 lässt sich kein Referenzwert berechnen.");
+            } else if (degreesPerKm === 0) {
+                client.log("Keine Richtungswechsel gemessen. Eine Skalierung allein kann"
+                    + " dieser Route keinen positiven Score geben.");
+            } else if (desiredScore === 100) {
+                client.log("Für Score 100 darf der Referenzwert höchstens " + degreesPerKm
+                    + " Grad/km betragen. Dies ist eine Grenze, kein eindeutiger Referenzwert.");
+            } else {
+                const suggestedReference = degreesPerKm * 100 / desiredScore;
+                client.assert(Number.isFinite(suggestedReference) && suggestedReference > 0,
+                    "Kein gültiger Referenzwert berechenbar");
+                client.log("Persönlicher Wunschscore: " + desiredScore);
+                client.log("Passender Referenzwert für diese Route: " + suggestedReference + " Grad/km");
+                client.log("Vor dem Übernehmen mit weiteren bekannten Routen vergleichen.");
+            }
+        }
+    }
+%}
